@@ -1652,7 +1652,7 @@
       "სისხლი": "criminal_cases"
     };
 
-    const AVAILABLE_TABLES = new Set(["administrative_cases", "criminal_cases"]);
+    const AVAILABLE_TABLES = new Set(["administrative_cases", "criminal_cases", "civil_cases"]);
 
     const CHAMBER_MAP = {
       "ადმინისტრაციული": "ადმინისტრაციულ საქმეთა პალატა",
@@ -1731,7 +1731,9 @@
 
         const rpcName = category === "სისხლი"
           ? "search_criminal_cases_hybrid"
-          : "search_administrative_cases_hybrid";
+          : category === "სამოქალაქო"
+            ? "search_civil_cases_hybrid"
+            : "search_administrative_cases_hybrid";
         R("━━━ BACKEND SEARCH REPORT ━━━");
         R(`function    : search-legal-cases`);
         R(`rpc         : ${rpcName}`);

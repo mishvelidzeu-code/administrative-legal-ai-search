@@ -6,17 +6,31 @@ const CORS_HEADERS = {
 };
 
 type LegalProfile = {
+  // shared
   legal_institution?: unknown;
   dispute_subject?: unknown;
-  special_law?: unknown;
   legal_articles?: unknown;
-  administrative_body?: unknown;
   must_match_terms?: unknown;
   exclude_terms?: unknown;
   strict_keywords?: unknown;
   broad_keywords?: unknown;
   keywords?: unknown;
   search_query?: unknown;
+  // administrative-specific
+  special_law?: unknown;
+  administrative_body?: unknown;
+  // civil-specific (GPT may populate these in future)
+  contract_type?: unknown;
+  property_type?: unknown;
+  family_relation?: unknown;
+  inheritance?: unknown;
+  obligation?: unknown;
+  ownership?: unknown;
+  mortgage?: unknown;
+  damages?: unknown;
+  company_dispute?: unknown;
+  labor_dispute?: unknown;
+  bankruptcy?: unknown;
 };
 
 type SearchPayload = {
@@ -152,7 +166,55 @@ function buildCriminalRpcParams(profile: LegalProfile, limit: number) {
   };
 }
 
-function buildRpcParams(profile: LegalProfile, limit: number, documentText: unknown) {
+function buildCivilRpcParams(profile: LegalProfile, limit: number) {
+  // Civil-specific fields contribute to keyword pools.
+  // Currently GPT doesn't extract these yet — structured here for future extension.
+  const civilStrict = asTextArray([
+    asText(profile.contract_type),
+    asText(profile.property_type),
+    asText(profile.obligation),
+    asText(profile.ownership),
+    asText(profile.mortgage),
+  ]);
+
+  const civilBroad = asTextArray([
+    asText(profile.family_relation),
+    asText(profile.inheritance),
+    asText(profile.damages),
+    asText(profile.company_dispute),
+    asText(profile.labor_dispute),
+    asText(profile.bankruptcy),
+  ]);
+
+  const strict = asTextArray([
+    ...asTextArray(profile.strict_keywords),
+    ...asTextArray(profile.must_match_terms),
+    asText(profile.legal_institution),
+    asText(profile.dispute_subject),
+    ...asTextArray(profile.legal_articles),
+    ...civilStrict,
+  ]).slice(0, 12);
+
+  const broad = asTextArray([
+    ...asTextArray(profile.broad_keywords),
+    ...asTextArray(profile.keywords),
+    asText(profile.search_query),
+    ...civilBroad,
+  ]).slice(0, 10);
+
+  return {
+    p_strict_keywords:   strict,
+    p_broad_keywords:    broad,
+    p_dispute_subject:   asText(profile.dispute_subject)   || null,
+    p_legal_institution: asText(profile.legal_institution) || null,
+    p_must_match_terms:  asTextArray(profile.must_match_terms).slice(0, 8),
+    p_exclude_terms:     asTextArray(profile.exclude_terms).slice(0, 10),
+    p_legal_articles:    asTextArray(profile.legal_articles).slice(0, 10),
+    p_limit:             limit,
+  };
+}
+
+function buildAdministrativeRpcParams(profile: LegalProfile, limit: number, documentText: unknown) {
   const genericProfile = isGenericAdministrativeProfile(profile);
   const documentTerms = extractDocumentSearchTerms(documentText);
 
@@ -236,6 +298,69 @@ Deno.serve(async (req: Request) => {
       },
     });
 
+    // ── სამოქალაქო საქმეები ──────────────────────────────────────────
+    if (category === "სამოქალაქო") {
+      const civilRpcParams = buildCivilRpcParams(profile, limit);
+
+      if (
+        civilRpcParams.p_strict_keywords.length === 0 &&
+        civilRpcParams.p_broad_keywords.length === 0 &&
+        !civilRpcParams.p_dispute_subject &&
+        !civilRpcParams.p_legal_institution
+      ) {
+        return jsonResp({
+          results: [],
+          count: 0,
+          searchMode: "empty_legal_profile",
+          message: "ძებნისთვის საკმარისი ინფორმაცია ვერ მოიძებნა.",
+        });
+      }
+
+      const { data: civilData, error: civilError } = await supabase.rpc(
+        "search_civil_cases_hybrid",
+        civilRpcParams,
+      );
+
+      if (civilError) {
+        console.error("search_civil_cases_hybrid error:", civilError);
+        return jsonResp({ error: "სამოქალაქო საქმეების ძებნა ვერ შესრულდა.", details: civilError.message }, 500);
+      }
+
+      const civilRows = Array.isArray(civilData) ? civilData : [];
+      const civilMaxScore = civilRows.reduce(
+        (max, row) => Math.max(max, Number(row.final_score) || 0),
+        0,
+      );
+
+      const civilResults = civilRows.map((row, index) => {
+        const finalScore = Number(row.final_score) || 0;
+        return {
+          id:              row.id,
+          case_number:     row.case_number,
+          decision_date:   row.decision_date,
+          dispute_subject: row.dispute_subject,
+          result:          row.result,
+          appeal_type:     row.appeal_type,
+          full_text:       row.full_text,
+          court_branch:    row.court_branch,
+          fullcase_url:    row.fullcase_url,
+          download_url:    row.download_url,
+          ts_rank:         row.ts_rank,
+          final_score:     finalScore,
+          score:           civilMaxScore > 0 ? Math.max(1, Math.round((finalScore / civilMaxScore) * 100)) : null,
+          search_mode:     row.search_mode || "fts_civil_hybrid",
+          rank_position:   index + 1,
+        };
+      });
+
+      return jsonResp({
+        results: civilResults,
+        count: civilResults.length,
+        searchMode: civilResults[0]?.search_mode || "fts_civil_hybrid",
+        message: civilResults.length > 0 ? null : "სამოქალაქო საქმე ვერ მოიძებნა.",
+      });
+    }
+
     // ── სისხლის სამართლის საქმეები ──────────────────────────────────
     if (category === "სისხლი") {
       const crimRpcParams = buildCriminalRpcParams(profile, limit);
@@ -304,11 +429,11 @@ Deno.serve(async (req: Request) => {
         results: [],
         count: 0,
         searchMode: "unsupported_category",
-        message: "ამ ეტაპზე backend search ჩართულია ადმინისტრაციული და სისხლის კატეგორიისთვის.",
+        message: "ამ ეტაპზე backend search ჩართულია ადმინისტრაციული, სისხლის და სამოქალაქო კატეგორიისთვის.",
       });
     }
 
-    const rpcParams = buildRpcParams(profile, limit, payload.uploadedDocumentText);
+    const rpcParams = buildAdministrativeRpcParams(profile, limit, payload.uploadedDocumentText);
 
     if (
       !rpcParams.p_legal_institution &&
