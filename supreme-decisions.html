@@ -1696,13 +1696,14 @@
     async function searchLegalCases(category, aiResult, limit = 30) {
       try {
         const { data, error } = await supabaseClient.functions.invoke(
-          "search-legal-cases",
+          "search-legal-cases-v2",
           {
             body: {
               category,
               aiResult,
               uploadedDocumentText,
-              limit
+              limit,
+              useSearchV2: true
             }
           }
         );
@@ -1735,7 +1736,7 @@
             ? "search_civil_cases_hybrid"
             : "search_administrative_cases_hybrid";
         R("━━━ BACKEND SEARCH REPORT ━━━");
-        R(`function    : search-legal-cases`);
+        R(`function    : search-legal-cases-v2 (hybrid)`);
         R(`rpc         : ${rpcName}`);
         R(`category    : ${category}`);
         R(`institution : ${aiResult?.legal_institution || "–"}`);
