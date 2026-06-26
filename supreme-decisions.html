@@ -1731,9 +1731,12 @@
           return;
         }
 
+        const rpcName = category === "სისხლი"
+          ? "search_criminal_cases_hybrid"
+          : "search_administrative_cases_hybrid";
         R("━━━ BACKEND SEARCH REPORT ━━━");
         R(`function    : search-legal-cases`);
-        R(`rpc         : search_administrative_cases_hybrid`);
+        R(`rpc         : ${rpcName}`);
         R(`category    : ${category}`);
         R(`institution : ${aiResult?.legal_institution || "–"}`);
         R(`dispute     : ${aiResult?.dispute_subject || "–"}`);
