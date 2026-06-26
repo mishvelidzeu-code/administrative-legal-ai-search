@@ -266,6 +266,7 @@
     .logo {
       letter-spacing: 0;
       color: #fff;
+      font-size: 1.28rem;
     }
 
     .logo::before {
@@ -434,6 +435,10 @@
   <script src="supabase.umd.js"></script>
   <script src="supabase-client.js"></script>
   <script>
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.replace('supreme-decisions.html');
+    });
+
     async function handleLogin(e) {
       e.preventDefault();
       const email = document.getElementById('email').value.trim();

@@ -30,7 +30,6 @@
 
     * {
       box-sizing: border-box;
-      transition: all 0.25s ease;
     }
 
     body {
@@ -1397,10 +1396,13 @@
 
   <header class="topbar">
     <div class="container topbar-inner">
-      <a class="logo" href="#">precedenti.ge</a>
+      <a class="logo" href="supreme-decisions.html">precedenti.ge</a>
       <div class="auth-actions">
-        <a class="auth-link" href="register.html">რეგისტრაცია</a>
-        <a class="auth-link strong" href="login.html">შესვლა</a>
+        <a class="auth-link" href="supreme-decisions.html">ძიება</a>
+        <div id="authActions" style="display:contents">
+          <a class="auth-link" href="register.html">რეგისტრაცია</a>
+          <a class="auth-link strong" href="login.html">შესვლა</a>
+        </div>
       </div>
     </div>
   </header>
@@ -2025,7 +2027,17 @@
     }, true);
 
     supabaseClient.auth.getSession()
-      .then(({ data: { session } }) => { isLoggedIn = !!session; })
+      .then(({ data: { session } }) => {
+        isLoggedIn = !!session;
+        if (session) {
+          const authActions = document.getElementById('authActions');
+          authActions.innerHTML = '<span class="auth-link" style="cursor:default">მომხმარებელი</span><button class="auth-link strong" id="logoutBtn" style="background:var(--red);border:1px solid var(--red);cursor:pointer">გამოსვლა</button>';
+          document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await supabaseClient.auth.signOut();
+            window.location.reload();
+          });
+        }
+      })
       .catch(() => { isLoggedIn = false; });
   </script>
 </body>
