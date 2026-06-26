@@ -273,21 +273,20 @@ Deno.serve(async (req: Request) => {
       const crimResults = crimRows.map((row, index) => {
         const finalScore = Number(row.final_score) || 0;
         return {
-          id:              row.id,
-          case_number:     row.case_number,
-          decision_date:   row.decision_date,
-          dispute_subject: row.dispute_subject,
-          result:          row.result,
-          appeal_type:     row.appeal_type,
-          full_text:       row.full_text,
-          court_branch:    row.court_branch,
-          fullcase_url:    row.fullcase_url,
-          download_url:    row.download_url,
-          ts_rank:         row.ts_rank,
-          final_score:     finalScore,
-          score:           crimMaxScore > 0 ? Math.max(1, Math.round((finalScore / crimMaxScore) * 100)) : null,
-          search_mode:     row.search_mode || "fts_criminal_hybrid",
-          rank_position:   index + 1,
+          id:            row.id,
+          case_number:   row.case_number,
+          decision_date: row.decision_date,
+          result:        row.result,
+          appeal_type:   row.appeal_type,
+          full_text:     row.full_text,
+          court_branch:  row.court_branch,
+          fullcase_url:  row.fullcase_url,
+          download_url:  row.download_url,
+          ts_rank:       row.ts_rank,
+          final_score:   finalScore,
+          score:         crimMaxScore > 0 ? Math.max(1, Math.round((finalScore / crimMaxScore) * 100)) : null,
+          search_mode:   row.search_mode || "fts_criminal_hybrid",
+          rank_position: index + 1,
         };
       });
 
