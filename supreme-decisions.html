@@ -1513,12 +1513,15 @@
           </div>
 
           <div class="ai-note-box">
-            <label>AI-სთვის მნიშვნელოვანი ინსტრუქცია</label>
-            <textarea id="ai-comment" rows="6" placeholder="ჩაწერეთ აქ ის კონკრეტული გარემოებები, ფაქტები ან მოთხოვნები, რასაც AI აუცილებლად დაეყრდნობა ძებნისა და ანალიზის პროცესში..." autocomplete="off"></textarea>
+            <label id="commentToggle" style="cursor:pointer;user-select:none;margin-bottom:0">კომენტარის გაკეთება <span class="toggle-indicator" id="commentArrow">▼</span></label>
+            <div class="collapsible-content" id="commentContent">
+              <textarea id="ai-comment" rows="6" placeholder="ჩაწერეთ აქ ის კონკრეტული გარემოებები, ფაქტები ან მოთხოვნები, რასაც AI აუცილებლად დაეყრდნობა ძებნისა და ანალიზის პროცესში..." autocomplete="off"></textarea>
+            </div>
           </div>
 
           <!-- Integrated Initial Structure Section -->
-          <div class="section-divider">საწყისი სტრუქტურა და გენერაცია</div>
+          <div class="section-divider" id="structureToggle" style="cursor:pointer;user-select:none">საწყისი სტრუქტურა და გენერაცია <span class="toggle-indicator" id="structureArrow">▼</span></div>
+          <div class="collapsible-content" id="structureContent">
           <div class="structure-grid">
           <div class="field full-width">
             <label>1. ფაქტების ამოღება</label>
@@ -1533,11 +1536,12 @@
             <input id="struct-evaluation" type="text" placeholder="ანალოგიური საქმეების პროცენტული შედარება და სამართლებრივი დასკვნა..." autocomplete="off">
           </div>
           </div>
-        
+          </div>
+
           <div class="actions">
             <button class="btn" id="analyze" type="button">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-              AI ანალიზის დაწყება
+              ანალიზის დაწყება
             </button>
           </div>
         </div>
@@ -1886,6 +1890,20 @@
       arrow.textContent = expanded ? '▲' : '▼';
     });
 
+    document.getElementById('commentToggle').addEventListener('click', () => {
+      const content = document.getElementById('commentContent');
+      const arrow = document.getElementById('commentArrow');
+      const expanded = content.classList.toggle('expanded');
+      arrow.textContent = expanded ? '▲' : '▼';
+    });
+
+    document.getElementById('structureToggle').addEventListener('click', () => {
+      const content = document.getElementById('structureContent');
+      const arrow = document.getElementById('structureArrow');
+      const expanded = content.classList.toggle('expanded');
+      arrow.textContent = expanded ? '▲' : '▼';
+    });
+
     $("#add-spec").addEventListener("click", addSpecTag);
     $("#legal-spec-input").addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); addSpecTag(); }
@@ -1967,6 +1985,8 @@
       }
       active = cat();
       hasSearched = true;
+
+      document.querySelector('.results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
       const aiPayload = {
         category:        active,
