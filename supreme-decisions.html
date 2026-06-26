@@ -1570,6 +1570,91 @@
     </div>
   </main>
 
+  <style>
+    #progressModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      background: rgba(7, 26, 51, 0.65);
+      backdrop-filter: blur(10px);
+      align-items: center;
+      justify-content: center;
+    }
+    .prog-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 38px 46px;
+      max-width: 430px;
+      width: calc(100% - 40px);
+      box-shadow: 0 28px 64px rgba(7, 26, 51, 0.30);
+      border-top: 5px solid var(--gold);
+    }
+    .prog-eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin: 0 0 4px;
+    }
+    .prog-title {
+      color: var(--navy);
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin: 0 0 26px;
+      letter-spacing: -0.01em;
+    }
+    .prog-step {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 15px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .prog-step:last-child { border-bottom: none; padding-bottom: 0; }
+    .prog-step-label { font-weight: 600; font-size: 0.96rem; color: var(--text); }
+    .prog-step.waiting { opacity: 0.28; }
+    .prog-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .prog-icon.spinning {
+      border: 3px solid #d9e0ea;
+      border-top-color: var(--primary);
+      animation: prog-spin 0.72s linear infinite;
+    }
+    .prog-icon.done {
+      background: #10b981;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 900;
+      border: none;
+    }
+    .prog-icon.idle { border: 3px solid #d9e0ea; }
+    @keyframes prog-spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <div id="progressModal">
+    <div class="prog-card">
+      <p class="prog-eyebrow">AI ანალიზი</p>
+      <h3 class="prog-title">გთხოვთ მოიცადოთ...</h3>
+      <div id="progStep1" class="prog-step">
+        <div id="progIcon1" class="prog-icon spinning"></div>
+        <span class="prog-step-label">მიმდინარეობს AI შეჯამება</span>
+      </div>
+      <div id="progStep2" class="prog-step waiting">
+        <div id="progIcon2" class="prog-icon idle"></div>
+        <span class="prog-step-label">მიმდინარეობს მსგავსი გადაწყვეტილების მოძიება</span>
+      </div>
+    </div>
+  </div>
+
   <footer class="footer">
     <div class="container">ინფორმაცია არის დამხმარე ხასიათის და არ ცვლის ადვოკატის პროფესიულ კონსულტაციას. &copy; 2026 precedenti.ge</div>
   </footer>
@@ -1977,6 +2062,31 @@
         $("#struct-evaluation").value = result.summary_for_search;
     }
 
+    function showProgress() {
+      document.getElementById('progressModal').style.display = 'flex';
+      const i1 = document.getElementById('progIcon1');
+      i1.className = 'prog-icon spinning'; i1.textContent = '';
+      document.getElementById('progStep1').className = 'prog-step';
+      const i2 = document.getElementById('progIcon2');
+      i2.className = 'prog-icon idle'; i2.textContent = '';
+      document.getElementById('progStep2').className = 'prog-step waiting';
+    }
+
+    function hideProgress() {
+      document.getElementById('progressModal').style.display = 'none';
+    }
+
+    function markStepDone(n) {
+      const icon = document.getElementById('progIcon' + n);
+      icon.className = 'prog-icon done';
+      icon.textContent = '✓';
+      if (n === 1) {
+        const i2 = document.getElementById('progIcon2');
+        i2.className = 'prog-icon spinning'; i2.textContent = '';
+        document.getElementById('progStep2').className = 'prog-step';
+      }
+    }
+
     async function runAiAnalysis() {
       if (!cat()) {
         $("#hint").classList.add("err");
@@ -1986,7 +2096,9 @@
       active = cat();
       hasSearched = true;
 
-      document.querySelector('.results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showProgress();
+      $("#analyze").disabled = true;
+      summary.textContent = "AI ანალიზი მიმდინარეობს...";
 
       const aiPayload = {
         category:        active,
@@ -2002,17 +2114,16 @@
       $("#struct-search").value = "";
       $("#struct-evaluation").value = "";
 
-      mode.textContent = "AI ანალიზი...";
-      summary.textContent = "AI ანალიზი მიმდინარეობს...";
-      $("#analyze").disabled = true;
-
-      // Step 1: AI analysis first — keywords needed before Supabase query
+      // Step 1: AI analysis
       const aiResult = await callAnalyzeLegalDocument(aiPayload);
       console.log("[AI FULL]", aiResult);
       displayAiAnalysis(aiResult);
+      markStepDone(1);
 
       // Check if this category's table is available yet
       if (TABLE_MAP[active] && !AVAILABLE_TABLES.has(TABLE_MAP[active])) {
+        await new Promise(r => setTimeout(r, 500));
+        hideProgress();
         count.textContent = "0 გადაწყვეტილება";
         list.innerHTML = `<div class="empty" style="border-color:#c9a558;background:var(--gold-soft);color:#7a5c1e">
           ამ კატეგორიის ბაზა ჯერ არ არის ჩატვირთული. მომავალ ვერსიაში დაემატება.
@@ -2020,16 +2131,21 @@
         document.getElementById("sourcePill").textContent = "წყარო: მოლოდინი";
         mode.textContent = "–";
         $("#analyze").disabled = false;
+        document.querySelector('.results').scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
 
-      // Step 2: Supabase two-tier search using full AI result
-      mode.textContent = "ძებნა...";
+      // Step 2: Supabase search
       await loadDecisionsByCategory(active, aiResult);
+      markStepDone(2);
+
+      await new Promise(r => setTimeout(r, 800));
+      hideProgress();
 
       $("#analyze").disabled = false;
       mode.textContent = useSupabase ? "Supabase" : "Demo";
       render();
+      document.querySelector('.results').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     $("#analyze").addEventListener("click", runAiAnalysis);
