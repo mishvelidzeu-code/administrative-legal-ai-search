@@ -1517,25 +1517,6 @@
             </div>
           </div>
 
-          <!-- Integrated Initial Structure Section -->
-          <div class="section-divider" id="structureToggle" style="cursor:pointer;user-select:none">საწყისი სტრუქტურა და გენერაცია <span class="toggle-indicator" id="structureArrow">▼</span></div>
-          <div class="collapsible-content" id="structureContent">
-          <div class="structure-grid">
-          <div class="field full-width">
-            <label>1. ფაქტების ამოღება</label>
-            <textarea id="struct-facts" rows="2" placeholder="მხარეების არგუმენტები, ფაქტობრივი გარემოებები და მტკიცებულებები ავტომატურად აისახება აქ..." autocomplete="off"></textarea>
-          </div>
-          <div class="field">
-            <label>2. პრაქტიკის ძებნა</label>
-            <input id="struct-search" type="text" placeholder="საკვანძო სიტყვები + სემანტიკური შესაბამისობა..." autocomplete="off">
-          </div>
-          <div class="field">
-            <label>3. შედეგის შეფასება</label>
-            <input id="struct-evaluation" type="text" placeholder="ანალოგიური საქმეების პროცენტული შედარება და სამართლებრივი დასკვნა..." autocomplete="off">
-          </div>
-          </div>
-          </div>
-
           <div class="actions">
             <button class="btn" id="analyze" type="button">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
@@ -1882,7 +1863,7 @@
       active = "";
       hasSearched = false;
       document.querySelectorAll('input[name="cat"]').forEach(r => r.checked = false);
-      ["defense-demand","prosecution-demand","desired-outcome","law-article","legal-spec-input","ai-comment","struct-facts","struct-search","struct-evaluation"].forEach(id => {
+      ["defense-demand","prosecution-demand","desired-outcome","law-article","legal-spec-input","ai-comment"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "";
       });
@@ -1973,13 +1954,6 @@
       arrow.textContent = expanded ? '▲' : '▼';
     });
 
-    document.getElementById('structureToggle').addEventListener('click', () => {
-      const content = document.getElementById('structureContent');
-      const arrow = document.getElementById('structureArrow');
-      const expanded = content.classList.toggle('expanded');
-      arrow.textContent = expanded ? '▲' : '▼';
-    });
-
     $("#add-spec").addEventListener("click", addSpecTag);
     $("#legal-spec-input").addEventListener("keydown", e => {
       if (e.key === "Enter") { e.preventDefault(); addSpecTag(); }
@@ -2045,12 +2019,6 @@
           : "",
       ].join("");
 
-      if (result.facts)
-        $("#struct-facts").value = result.facts;
-      if (result.search_query || result.keywords?.length)
-        $("#struct-search").value = result.search_query || (result.keywords || []).join(" + ");
-      if (result.summary_for_search)
-        $("#struct-evaluation").value = result.summary_for_search;
     }
 
     function showProgress() {
@@ -2100,10 +2068,6 @@
         userInstruction: $("#ai-comment").value,
         documentText:    uploadedDocumentText,
       };
-
-      $("#struct-facts").value = "";
-      $("#struct-search").value = "";
-      $("#struct-evaluation").value = "";
 
       // Step 1: AI analysis
       const aiResult = await callAnalyzeLegalDocument(aiPayload);
