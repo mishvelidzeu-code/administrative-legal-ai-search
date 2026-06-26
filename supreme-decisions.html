@@ -783,11 +783,11 @@
     }
 
     .hero {
-      min-height: 250px;
-      padding: 38px 42px;
+      min-height: 340px;
+      padding: 44px 50px;
       background:
-        linear-gradient(90deg, rgba(7, 26, 51, 0.98) 0%, rgba(7, 26, 51, 0.93) 44%, rgba(7, 26, 51, 0.55) 72%, rgba(7, 26, 51, 0.9) 100%),
-        var(--justice-image) right 34px center / 430px auto no-repeat,
+        linear-gradient(90deg, rgba(7, 26, 51, 0.98) 0%, rgba(7, 26, 51, 0.90) 34%, rgba(7, 26, 51, 0.14) 56%, rgba(7, 26, 51, 0.60) 100%),
+        var(--justice-image) right center / 620px auto no-repeat,
         linear-gradient(135deg, #071a33, #12335f);
       border: 1px solid rgba(184, 138, 46, 0.28);
       border-radius: 16px;
@@ -1215,11 +1215,11 @@
       }
 
       .hero {
-        min-height: 280px;
-        padding: 24px;
+        min-height: 340px;
+        padding: 28px 24px;
         background:
-          linear-gradient(90deg, rgba(7, 26, 51, 0.98), rgba(7, 26, 51, 0.86)),
-          var(--justice-image) right -18px top 18px / 240px auto no-repeat,
+          linear-gradient(90deg, rgba(7, 26, 51, 0.98) 0%, rgba(7, 26, 51, 0.90) 40%, rgba(7, 26, 51, 0.30) 100%),
+          var(--justice-image) right center / 310px auto no-repeat,
           linear-gradient(135deg, #071a33, #12335f);
       }
 
@@ -1474,11 +1474,12 @@
           </div>
 
           <div class="ai-panel">
-            <div class="ai-panel-title">
-              <h3>მხარეთა პოზიციები და მოთხოვნები</h3>
+            <div class="ai-panel-title" id="positionsToggle" style="cursor:pointer;user-select:none;margin-bottom:0">
+              <h3>დამატებითი მოთხოვნები <span class="toggle-indicator" id="positionsArrow">▼</span></h3>
             </div>
-        
-            <div class="form-row-2">
+
+            <div class="collapsible-content" id="positionsContent">
+          <div class="form-row-2">
           <div class="field">
             <label>დაცვის მხარე (რას ითხოვს და რატომ?)</label>
             <textarea id="defense-demand" rows="3" placeholder="ჩაწერეთ დაცვის მხარის მოთხოვნა და არგუმენტი" autocomplete="off"></textarea>
@@ -1507,6 +1508,7 @@
             <button class="btn secondary" id="add-spec" type="button">დამატება</button>
           </div>
           <div class="chips user-chips" id="legal-specs"></div>
+            </div>
             </div>
           </div>
 
@@ -1876,6 +1878,13 @@
       input.value = "";
       updateSpecSearch();
     }
+
+    document.getElementById('positionsToggle').addEventListener('click', () => {
+      const content = document.getElementById('positionsContent');
+      const arrow = document.getElementById('positionsArrow');
+      const expanded = content.classList.toggle('expanded');
+      arrow.textContent = expanded ? '▲' : '▼';
+    });
 
     $("#add-spec").addEventListener("click", addSpecTag);
     $("#legal-spec-input").addEventListener("keydown", e => {
