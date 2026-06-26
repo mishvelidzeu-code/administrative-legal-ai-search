@@ -1456,7 +1456,7 @@
                 <h3>საქმის კატეგორია</h3>
               </div>
               <div class="routing" id="routing">
-                <label class="route"><input name="cat" type="radio" value="სისხლის"><span>სისხლის</span></label>
+                <label class="route"><input name="cat" type="radio" value="სისხლი"><span>სისხლი</span></label>
                 <label class="route"><input name="cat" type="radio" value="სამოქალაქო"><span>სამოქალაქო</span></label>
                 <label class="route"><input name="cat" type="radio" value="ადმინისტრაციული"><span>ადმინისტრაციული</span></label>
               </div>
@@ -1651,20 +1651,20 @@
     const TABLE_MAP = {
       "ადმინისტრაციული": "administrative_cases",
       "სამოქალაქო": "civil_cases",
-      "სისხლის": "criminal_cases"
+      "სისხლი": "criminal_cases"
     };
 
-    const AVAILABLE_TABLES = new Set(["administrative_cases"]);
+    const AVAILABLE_TABLES = new Set(["administrative_cases", "criminal_cases"]);
 
     const CHAMBER_MAP = {
       "ადმინისტრაციული": "ადმინისტრაციულ საქმეთა პალატა",
       "სამოქალაქო": "სამოქალაქო საქმეთა პალატა",
-      "სისხლის": "სისხლის სამართლის საქმეთა პალატა"
+      "სისხლი": "სისხლის სამართლის საქმეთა პალატა"
     };
 
     const demo = [
-      {id:1,type:"სისხლის",chamber:"სისხლის სამართლის საქმეთა პალატა",number:"სს-45-2024",date:"2024-02-02",title:"მტკიცებულებების დასაშვებობა და დაცვის საჩივარი",result:"დაკმაყოფილდა",score:null,text:"დაცვის მხარე ითხოვდა გამართლებას სადავო მტკიცებულებების ბაზაზე. სასამართლომ შეაფასა წინასასამართლო სხდომის ოქმები და სრულად გაიზიარა დაცვის პოზიცია.",fullcase_url:null,download_url:null},
-      {id:2,type:"სისხლის",chamber:"სისხლის სამართლის საქმეთა პალატა",number:"სს-112-2023",date:"2023-09-18",title:"სსკ 50-ე მუხლის მე-5 ნაწილის განმარტება",result:"ნაწილობრივ დაკმაყოფილდა",score:null,text:"მსჯელობა დაცვის საჩივარზე, რომელიც ითხოვდა სასჯელის შემსუბუქებას სპეციფიკური პროცესუალური ნორმების საფუძველზე.",fullcase_url:null,download_url:null},
+      {id:1,type:"სისხლი",chamber:"სისხლის სამართლის საქმეთა პალატა",number:"სს-45-2024",date:"2024-02-02",title:"მტკიცებულებების დასაშვებობა და დაცვის საჩივარი",result:"დაკმაყოფილდა",score:null,text:"დაცვის მხარე ითხოვდა გამართლებას სადავო მტკიცებულებების ბაზაზე. სასამართლომ შეაფასა წინასასამართლო სხდომის ოქმები და სრულად გაიზიარა დაცვის პოზიცია.",fullcase_url:null,download_url:null},
+      {id:2,type:"სისხლი",chamber:"სისხლის სამართლის საქმეთა პალატა",number:"სს-112-2023",date:"2023-09-18",title:"სსკ 50-ე მუხლის მე-5 ნაწილის განმარტება",result:"ნაწილობრივ დაკმაყოფილდა",score:null,text:"მსჯელობა დაცვის საჩივარზე, რომელიც ითხოვდა სასჯელის შემსუბუქებას სპეციფიკური პროცესუალური ნორმების საფუძველზე.",fullcase_url:null,download_url:null},
       {id:3,type:"ადმინისტრაციული",chamber:"ადმინისტრაციულ საქმეთა პალატა",number:"ბს-77-2023",date:"2023-11-08",title:"ადმინისტრაციული აქტის ბათილობა",result:"გაუქმდა",score:null,text:"წარმოების თავისებურებები და სადავო მტკიცებულებების სტანდარტი. განხილულია ადმინისტრაციული ორგანოს მიერ გამოცემული აქტის კანონიერება.",fullcase_url:null,download_url:null}
     ];
 

@@ -71,7 +71,7 @@ function normalizeCategory(value: unknown): string {
   const category = asText(value);
   if (category === "ადმინისტრაციული" || category === "administrative") return "ადმინისტრაციული";
   if (category === "სამოქალაქო" || category === "civil") return "სამოქალაქო";
-  if (category === "სისხლის" || category === "criminal") return "სისხლის";
+  if (category === "სისხლი" || category === "სისხლის" || category === "criminal") return "სისხლი";
   return category;
 }
 
@@ -200,12 +200,73 @@ Deno.serve(async (req: Request) => {
     const limit = clampLimit(payload.limit);
     const profile = pickProfile(payload);
 
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+      global: {
+        headers: {
+          Authorization: req.headers.get("Authorization") || `Bearer ${supabaseKey}`,
+        },
+      },
+    });
+
+    // ── სისხლის სამართლის საქმეები ──────────────────────────────────
+    if (category === "სისხლი") {
+      const keywords = asTextArray([
+        ...asTextArray(profile.strict_keywords),
+        ...asTextArray(profile.keywords),
+        asText(profile.legal_institution),
+        asText(profile.dispute_subject),
+        asText(profile.search_query),
+      ]).slice(0, 5);
+
+      if (keywords.length === 0) {
+        return jsonResp({
+          results: [],
+          count: 0,
+          searchMode: "empty_legal_profile",
+          message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა.",
+        });
+      }
+
+      const safe = (s: string) => s.replace(/%/g, "").replace(/_/g, "");
+      const orClause = keywords
+        .slice(0, 4)
+        .map((kw) => `dispute_subject.ilike.%${safe(kw)}%`)
+        .join(",");
+
+      const { data: crimRows, error: crimError } = await supabase
+        .from("criminal_cases")
+        .select("id, case_number, decision_date, dispute_subject, result, appeal_type, full_text, court_branch, fullcase_url, download_url")
+        .or(orClause)
+        .limit(limit);
+
+      if (crimError) {
+        console.error("criminal_cases error:", crimError);
+        return jsonResp({ error: "სისხლის საქმეების ძებნა ვერ შესრულდა.", details: crimError.message }, 500);
+      }
+
+      const crimResults = (Array.isArray(crimRows) ? crimRows : []).map((row, i) => ({
+        ...row,
+        score: null,
+        rank_position: i + 1,
+        search_mode: "fts_criminal",
+      }));
+
+      return jsonResp({
+        results: crimResults,
+        count: crimResults.length,
+        searchMode: "fts_criminal",
+        message: crimResults.length > 0 ? null : "სისხლის სამართლის საქმე ვერ მოიძებნა.",
+      });
+    }
+
+    // ── ადმინისტრაციული საქმეები ──────────────────────────────────────
     if (category !== "ადმინისტრაციული") {
       return jsonResp({
         results: [],
         count: 0,
         searchMode: "unsupported_category",
-        message: "ამ ეტაპზე backend search ჩართულია მხოლოდ ადმინისტრაციული კატეგორიისთვის.",
+        message: "ამ ეტაპზე backend search ჩართულია ადმინისტრაციული და სისხლის კატეგორიისთვის.",
       });
     }
 
@@ -225,15 +286,6 @@ Deno.serve(async (req: Request) => {
         debug: { rpcParams },
       });
     }
-
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false },
-      global: {
-        headers: {
-          Authorization: req.headers.get("Authorization") || `Bearer ${supabaseKey}`,
-        },
-      },
-    });
 
     const { data, error } = await supabase.rpc("search_administrative_cases_hybrid", rpcParams);
 
