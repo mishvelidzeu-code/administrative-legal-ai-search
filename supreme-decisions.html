@@ -1473,6 +1473,11 @@
             <pre id="doc-preview" style="font-size:0.85rem;color:var(--text);background:#f8fafc;border:1px solid #d9e0ea;border-radius:8px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;max-height:130px;overflow-y:auto;margin:0;font-family:inherit;line-height:1.55"></pre>
           </div>
 
+          <div class="ai-note-box">
+            <label>კომენტარის გაკეთება</label>
+            <textarea id="ai-comment" rows="3" placeholder="ჩაწერეთ აქ ის კონკრეტული გარემოებები, ფაქტები ან მოთხოვნები, რასაც AI აუცილებლად დაეყრდნობა ძებნისა და ანალიზის პროცესში..." autocomplete="off"></textarea>
+          </div>
+
           <div class="ai-panel">
             <div class="ai-panel-title" id="positionsToggle" style="cursor:pointer;user-select:none;margin-bottom:0">
               <h3>დამატებითი მოთხოვნები <span class="toggle-indicator" id="positionsArrow">▼</span></h3>
@@ -1509,13 +1514,6 @@
           </div>
           <div class="chips user-chips" id="legal-specs"></div>
             </div>
-            </div>
-          </div>
-
-          <div class="ai-note-box">
-            <label id="commentToggle" style="cursor:pointer;user-select:none;margin-bottom:0">კომენტარის გაკეთება <span class="toggle-indicator" id="commentArrow">▼</span></label>
-            <div class="collapsible-content" id="commentContent">
-              <textarea id="ai-comment" rows="6" placeholder="ჩაწერეთ აქ ის კონკრეტული გარემოებები, ფაქტები ან მოთხოვნები, რასაც AI აუცილებლად დაეყრდნობა ძებნისა და ანალიზის პროცესში..." autocomplete="off"></textarea>
             </div>
           </div>
 
@@ -1971,13 +1969,6 @@
     document.getElementById('positionsToggle').addEventListener('click', () => {
       const content = document.getElementById('positionsContent');
       const arrow = document.getElementById('positionsArrow');
-      const expanded = content.classList.toggle('expanded');
-      arrow.textContent = expanded ? '▲' : '▼';
-    });
-
-    document.getElementById('commentToggle').addEventListener('click', () => {
-      const content = document.getElementById('commentContent');
-      const arrow = document.getElementById('commentArrow');
       const expanded = content.classList.toggle('expanded');
       arrow.textContent = expanded ? '▲' : '▼';
     });
