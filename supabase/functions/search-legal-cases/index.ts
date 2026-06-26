@@ -125,6 +125,33 @@ function extractDocumentSearchTerms(documentText: unknown): string[] {
   return candidates.filter(term => text.includes(term.toLowerCase())).slice(0, 8);
 }
 
+function buildCriminalRpcParams(profile: LegalProfile, limit: number) {
+  const strict = asTextArray([
+    ...asTextArray(profile.strict_keywords),
+    ...asTextArray(profile.must_match_terms),
+    asText(profile.legal_institution),
+    asText(profile.dispute_subject),
+    ...asTextArray(profile.legal_articles),
+  ]).slice(0, 12);
+
+  const broad = asTextArray([
+    ...asTextArray(profile.broad_keywords),
+    ...asTextArray(profile.keywords),
+    asText(profile.search_query),
+  ]).slice(0, 10);
+
+  return {
+    p_strict_keywords:   strict,
+    p_broad_keywords:    broad,
+    p_dispute_subject:   asText(profile.dispute_subject)   || null,
+    p_legal_institution: asText(profile.legal_institution) || null,
+    p_must_match_terms:  asTextArray(profile.must_match_terms).slice(0, 8),
+    p_exclude_terms:     asTextArray(profile.exclude_terms).slice(0, 10),
+    p_legal_articles:    asTextArray(profile.legal_articles).slice(0, 10),
+    p_limit:             limit,
+  };
+}
+
 function buildRpcParams(profile: LegalProfile, limit: number, documentText: unknown) {
   const genericProfile = isGenericAdministrativeProfile(profile);
   const documentTerms = extractDocumentSearchTerms(documentText);
@@ -211,51 +238,63 @@ Deno.serve(async (req: Request) => {
 
     // ── სისხლის სამართლის საქმეები ──────────────────────────────────
     if (category === "სისხლი") {
-      const keywords = asTextArray([
-        ...asTextArray(profile.strict_keywords),
-        ...asTextArray(profile.keywords),
-        asText(profile.legal_institution),
-        asText(profile.dispute_subject),
-        asText(profile.search_query),
-      ]).slice(0, 5);
+      const crimRpcParams = buildCriminalRpcParams(profile, limit);
 
-      if (keywords.length === 0) {
+      if (
+        crimRpcParams.p_strict_keywords.length === 0 &&
+        crimRpcParams.p_broad_keywords.length === 0 &&
+        !crimRpcParams.p_dispute_subject &&
+        !crimRpcParams.p_legal_institution
+      ) {
         return jsonResp({
           results: [],
           count: 0,
           searchMode: "empty_legal_profile",
-          message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა.",
+          message: "ძებნისთვის საკმარისი ინფორმაცია ვერ მოიძებნა.",
         });
       }
 
-      const safe = (s: string) => s.replace(/%/g, "").replace(/_/g, "");
-      const orClause = keywords
-        .slice(0, 4)
-        .map((kw) => `dispute_subject.ilike.%${safe(kw)}%`)
-        .join(",");
-
-      const { data: crimRows, error: crimError } = await supabase
-        .from("criminal_cases")
-        .select("id, case_number, decision_date, dispute_subject, result, appeal_type, full_text, court_branch, fullcase_url, download_url")
-        .or(orClause)
-        .limit(limit);
+      const { data: crimData, error: crimError } = await supabase.rpc(
+        "search_criminal_cases_hybrid",
+        crimRpcParams,
+      );
 
       if (crimError) {
-        console.error("criminal_cases error:", crimError);
+        console.error("search_criminal_cases_hybrid error:", crimError);
         return jsonResp({ error: "სისხლის საქმეების ძებნა ვერ შესრულდა.", details: crimError.message }, 500);
       }
 
-      const crimResults = (Array.isArray(crimRows) ? crimRows : []).map((row, i) => ({
-        ...row,
-        score: null,
-        rank_position: i + 1,
-        search_mode: "fts_criminal",
-      }));
+      const crimRows = Array.isArray(crimData) ? crimData : [];
+      const crimMaxScore = crimRows.reduce(
+        (max, row) => Math.max(max, Number(row.final_score) || 0),
+        0,
+      );
+
+      const crimResults = crimRows.map((row, index) => {
+        const finalScore = Number(row.final_score) || 0;
+        return {
+          id:              row.id,
+          case_number:     row.case_number,
+          decision_date:   row.decision_date,
+          dispute_subject: row.dispute_subject,
+          result:          row.result,
+          appeal_type:     row.appeal_type,
+          full_text:       row.full_text,
+          court_branch:    row.court_branch,
+          fullcase_url:    row.fullcase_url,
+          download_url:    row.download_url,
+          ts_rank:         row.ts_rank,
+          final_score:     finalScore,
+          score:           crimMaxScore > 0 ? Math.max(1, Math.round((finalScore / crimMaxScore) * 100)) : null,
+          search_mode:     row.search_mode || "fts_criminal_hybrid",
+          rank_position:   index + 1,
+        };
+      });
 
       return jsonResp({
         results: crimResults,
         count: crimResults.length,
-        searchMode: "fts_criminal",
+        searchMode: crimResults[0]?.search_mode || "fts_criminal_hybrid",
         message: crimResults.length > 0 ? null : "სისხლის სამართლის საქმე ვერ მოიძებნა.",
       });
     }
