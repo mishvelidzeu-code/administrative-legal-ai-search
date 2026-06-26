@@ -63,8 +63,8 @@ function asTextArray(value: unknown): string[] {
 
 function clampLimit(value: unknown): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 20;
-  return Math.min(Math.max(Math.trunc(parsed), 1), 100);
+  if (!Number.isFinite(parsed)) return 10;
+  return Math.min(Math.max(Math.trunc(parsed), 1), 30);
 }
 
 function normalizeCategory(value: unknown): string {
@@ -83,30 +83,86 @@ function pickProfile(payload: SearchPayload): LegalProfile {
       : {};
 }
 
-function buildRpcParams(profile: LegalProfile, limit: number) {
-  const strict = asTextArray([
-    ...asTextArray(profile.strict_keywords),
-    ...asTextArray(profile.must_match_terms),
+function isGenericAdministrativeProfile(profile: LegalProfile): boolean {
+  const text = [
     asText(profile.legal_institution),
     asText(profile.dispute_subject),
-    asText(profile.administrative_body),
-    asText(profile.special_law),
-    ...asTextArray(profile.legal_articles),
-  ]).slice(0, 14);
+    ...asTextArray(profile.strict_keywords),
+    ...asTextArray(profile.must_match_terms),
+  ].join(" ").toLowerCase();
+
+  if (!text) return false;
+
+  return [
+    "ადმინისტრაციული სამართალი",
+    "ადმინისტრაციული აქტი",
+    "ადმინისტრაციული აქტების ბათილად",
+    "ადმინისტრაციულ სამართლებრივი აქტის ბათილად",
+    "ინდივიდუალური ადმინისტრაციულ სამართლებრივი აქტის ბათილად",
+  ].some(term => text.includes(term));
+}
+
+function extractDocumentSearchTerms(documentText: unknown): string[] {
+  const text = asText(documentText).toLowerCase();
+  if (!text) return [];
+
+  const candidates = [
+    "სამშენებლო სამართალდარღვევა",
+    "სამშენებლო სამართალდარღვევის საქმეზე",
+    "მშენებლობის ნებართვის გარეშე",
+    "მუნიციპალური ინსპექცია",
+    "თბილისის მუნიციპალიტეტის მუნიციპალური ინსპექცია",
+    "თბილისის მუნიციპალიტეტის მერია",
+    "შემოწმების აქტი",
+    "მითითება",
+    "დადგენილება სამშენებლო სამართალდარღვევის საქმეზე",
+    "არქიტექტურისა და ქალაქმშენებლობის",
+    "დაშენებითი სამუშაოები",
+    "ფალიაშვილის",
+    "საცხოვრებელი კორპუსი",
+  ];
+
+  return candidates.filter(term => text.includes(term.toLowerCase())).slice(0, 8);
+}
+
+function buildRpcParams(profile: LegalProfile, limit: number, documentText: unknown) {
+  const genericProfile = isGenericAdministrativeProfile(profile);
+  const documentTerms = extractDocumentSearchTerms(documentText);
+
+  const strictSeed = genericProfile && documentTerms.length > 0
+    ? [
+        ...documentTerms,
+        ...asTextArray(profile.strict_keywords),
+        ...asTextArray(profile.must_match_terms),
+      ]
+    : [
+        ...asTextArray(profile.strict_keywords),
+        ...asTextArray(profile.must_match_terms),
+        asText(profile.legal_institution),
+        asText(profile.dispute_subject),
+        asText(profile.administrative_body),
+        asText(profile.special_law),
+        ...asTextArray(profile.legal_articles),
+      ];
+
+  const strict = asTextArray(strictSeed).slice(0, 12);
 
   const broad = asTextArray([
+    ...documentTerms,
     ...asTextArray(profile.broad_keywords),
     ...asTextArray(profile.keywords),
     asText(profile.search_query),
   ]).slice(0, 10);
 
   return {
-    p_legal_institution: asText(profile.legal_institution) || null,
-    p_dispute_subject: asText(profile.dispute_subject) || null,
+    p_legal_institution: genericProfile ? null : (asText(profile.legal_institution) || null),
+    p_dispute_subject: genericProfile && documentTerms.length > 0
+      ? documentTerms[0]
+      : (asText(profile.dispute_subject) || null),
     p_special_law: asText(profile.special_law) || null,
     p_legal_articles: asTextArray(profile.legal_articles).slice(0, 10),
     p_administrative_body: asText(profile.administrative_body) || null,
-    p_must_match_terms: asTextArray(profile.must_match_terms).slice(0, 8),
+    p_must_match_terms: genericProfile ? [] : asTextArray(profile.must_match_terms).slice(0, 8),
     p_exclude_terms: asTextArray(profile.exclude_terms).slice(0, 10),
     p_strict_keywords: strict,
     p_broad_keywords: broad,
@@ -153,7 +209,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const rpcParams = buildRpcParams(profile, limit);
+    const rpcParams = buildRpcParams(profile, limit, payload.uploadedDocumentText);
 
     if (
       !rpcParams.p_legal_institution &&
