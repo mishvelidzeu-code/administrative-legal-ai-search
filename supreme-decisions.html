@@ -2053,6 +2053,7 @@
       if (!cat()) {
         $("#hint").classList.add("err");
         $("#hint").textContent = "მონიშნე კატეგორია ანალიზის დასაწყებად.";
+        $("#hint").scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
       active = cat();
