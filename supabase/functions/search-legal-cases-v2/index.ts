@@ -311,7 +311,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const category = normalizeCategoryForV2(payload.category);
+    const category = normalizeCategoryForV2(payload.sourceTable || payload.table || payload.category);
     const limit = clampLimit(payload.limit);
     const profile = pickProfile(payload);
     const queryText = buildQueryText(payload, profile);
@@ -385,10 +385,17 @@ Deno.serve(async (req: Request) => {
 
     if (ftsResult.error && vectorResult.error) {
       return jsonResp({
-        error: "Both FTS and vector search failed",
-        fts_error: ftsResult.error.message,
-        vector_error: vectorResult.error.message,
-      }, 500);
+        results: [],
+        count: 0,
+        searchMode: "search_unavailable",
+        message: "ძებნის სერვისი დროებით მიუწვდომელია.",
+        debug: {
+          v2: true,
+          fts_error: ftsResult.error.message,
+          vector_error: vectorResult.error.message,
+          rpc_name: rpcName,
+        },
+      });
     }
 
     const ftsRows = ftsResult.error ? [] : (Array.isArray(ftsResult.data) ? ftsResult.data : []);

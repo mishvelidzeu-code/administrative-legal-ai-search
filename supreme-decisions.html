@@ -1700,6 +1700,7 @@
           {
             body: {
               category,
+              sourceTable: TABLE_MAP[category],
               aiResult,
               uploadedDocumentText,
               limit,
@@ -1762,6 +1763,8 @@
           searchMode = searchResponse.searchMode || "backend_empty";
           if (sourcePill) sourcePill.textContent = "წყარო: Backend Search";
           R(searchResponse?.message || "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა.");
+          if (searchResponse?.debug?.fts_error) R(`fts_err    : ${searchResponse.debug.fts_error}`);
+          if (searchResponse?.debug?.vector_error) R(`vec_err    : ${searchResponse.debug.vector_error}`);
         }
       } catch (err) {
         R(`✗ ERROR: ${err.message}`);
