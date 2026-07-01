@@ -1694,25 +1694,45 @@
     }
 
     async function searchLegalCases(category, aiResult, limit = 30) {
+      const body = {
+        category,
+        sourceTable: TABLE_MAP[category],
+        aiResult,
+        uploadedDocumentText,
+        limit
+      };
+
       try {
         const { data, error } = await supabaseClient.functions.invoke(
           "search-legal-cases-v2",
           {
-            body: {
-              category,
-              sourceTable: TABLE_MAP[category],
-              aiResult,
-              uploadedDocumentText,
-              limit,
-              useSearchV2: true
-            }
+            body: { ...body, useSearchV2: true }
           }
         );
 
-        if (error) return { error: error.message || "ძებნა ვერ შესრულდა." };
-        return data || { results: [], message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა." };
+        if (!error) return data || { results: [], message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა." };
+
+        console.warn("[search-v2 failed, falling back to v1]", error);
+        const fallback = await supabaseClient.functions.invoke("search-legal-cases", { body });
+        if (fallback.error) {
+          return { error: fallback.error.message || error.message || "ძებნა ვერ შესრულდა." };
+        }
+
+        return {
+          ...(fallback.data || { results: [], message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა." }),
+          searchMode: `fallback_v1_after_v2_error`
+        };
       } catch (err) {
-        return { error: err.message || "ძებნის სერვისთან კავშირი ვერ დამყარდა." };
+        try {
+          const fallback = await supabaseClient.functions.invoke("search-legal-cases", { body });
+          if (fallback.error) throw fallback.error;
+          return {
+            ...(fallback.data || { results: [], message: "ზუსტი სამართლებრივი ინსტიტუტით შედეგი ვერ მოიძებნა." }),
+            searchMode: `fallback_v1_after_v2_exception`
+          };
+        } catch (fallbackErr) {
+          return { error: fallbackErr.message || err.message || "ძებნის სერვისთან კავშირი ვერ დამყარდა." };
+        }
       }
     }
 

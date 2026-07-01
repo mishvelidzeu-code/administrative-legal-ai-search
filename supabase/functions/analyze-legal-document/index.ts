@@ -218,11 +218,13 @@ function buildFastLegalProfile(payload: RequestPayload) {
     mustMatchTerms.push("მუქარა");
   }
 
-  if (includesAny(text, ["ნარკოტიკ", "კანაფ", "260", "273"])) {
+  if (!legalInstitution && includesAny(text, ["ნარკოტიკ", "კანაფ", "260", "273"])) {
     legalInstitution = "ნარკოტიკული დანაშაული";
     crimeType = "ნარკოტიკული დანაშაული";
     strictKeywords.push("ნარკოტიკული", "კანაფი", "260", "273");
     broadKeywords.push("ნარკოტიკული საშუალება");
+  } else if (includesAny(text, ["ნარკოტიკ", "კანაფ", "260", "273"])) {
+    broadKeywords.push("ნარკოტიკული", "კანაფი");
   }
 
   if (includesAny(text, ["შემაკავებელი ორდერ", "ორდერის დარღვ"])) {
