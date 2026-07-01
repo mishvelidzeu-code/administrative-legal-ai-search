@@ -17,6 +17,31 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const QUERY_DOCUMENT_SLICE_CHARS = 2400;
+const QUERY_MAX_CHARS = 10000;
+const MIN_SEMANTIC_SCORE = 0.30;
+const FTS_WEIGHT = 0.20;
+const SEMANTIC_WEIGHT = 0.70;
+const METADATA_WEIGHT = 0.10;
+
+const GENERIC_PROCEDURAL_TERMS = [
+  "საკასაციო საჩივარი",
+  "საკასაციო სასამართლო",
+  "საკასაციო პალატა",
+  "საჩივარი დაუშვებელია",
+  "დაუშვებლად იქნეს ცნობილი",
+  "303-ე მუხლი",
+  "303 მუხლი",
+  "დასაშვებობის შემოწმება",
+  "საქართველოს უზენაესი სასამართლო",
+  "განჩინება საბოლოოა",
+  "არ საჩივრდება",
+  "არსებითად განსახილველად",
+  "სსსკ-ის 303",
+  "სსკ-ის 303",
+  "საპროცესო კოდექსის 303",
+];
+
 type SearchPayload = SharedSearchPayload & {
   query?: unknown;
   search_query?: unknown;
@@ -58,11 +83,56 @@ function normalizeCategoryForV2(value: unknown) {
   return { label: category, key: category, table: "" };
 }
 
+function isGenericProceduralText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return GENERIC_PROCEDURAL_TERMS.some((term) => lower.includes(term.toLowerCase()));
+}
+
+function isUsefulSearchTerm(text: string): boolean {
+  const cleaned = asText(text).toLowerCase();
+  if (cleaned.length <= 2) return false;
+  if (isGenericProceduralText(cleaned)) return false;
+  return true;
+}
+
+function extractDocumentQueryText(value: unknown): string {
+  const text = asText(value);
+  if (!text) return "";
+
+  const factFocusedText = text
+    .split(/\n{2,}|(?<=\.)\s+(?=[ა-ჰ0-9])/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 40 && !isGenericProceduralText(part))
+    .join("\n\n");
+
+  const source = factFocusedText || text;
+
+  if (source.length <= QUERY_DOCUMENT_SLICE_CHARS * 3) {
+    return source;
+  }
+
+  const middleStart = Math.max(
+    Math.floor((source.length - QUERY_DOCUMENT_SLICE_CHARS) / 2),
+    0,
+  );
+
+  return [
+    source.slice(0, QUERY_DOCUMENT_SLICE_CHARS),
+    source.slice(middleStart, middleStart + QUERY_DOCUMENT_SLICE_CHARS),
+    source.slice(-QUERY_DOCUMENT_SLICE_CHARS),
+  ].join("\n\n");
+}
+
 function buildQueryText(payload: SearchPayload, profile: LegalProfile): string {
-  const terms = [
+  const terms = asTextArray([
     asText(payload.query),
     asText(payload.search_query),
     asText(profile.search_query),
+    asText(profile.summary_for_search),
+    asText(profile.desired_similarity),
+    asText(profile.legal_issue),
+    asText(profile.main_legal_issue),
+    asText(profile.requested_action),
     asText(profile.legal_institution),
     asText(profile.dispute_subject),
     asText(profile.result),
@@ -80,10 +150,10 @@ function buildQueryText(payload: SearchPayload, profile: LegalProfile): string {
     ...asTextArray(profile.strict_keywords),
     ...asTextArray(profile.broad_keywords),
     ...asTextArray(profile.keywords),
-    asText(payload.uploadedDocumentText).slice(0, 1200),
-  ];
+    extractDocumentQueryText(payload.uploadedDocumentText),
+  ]).filter(isUsefulSearchTerm);
 
-  return asTextArray(terms).join(" ").slice(0, 6000);
+  return terms.join(" ").slice(0, QUERY_MAX_CHARS);
 }
 
 async function createQueryEmbedding(openaiKey: string, queryText: string): Promise<number[]> {
@@ -126,15 +196,19 @@ function metadataBonus(row: SearchRow, profile: LegalProfile, queryText: string)
   const needles = asTextArray([
     asText(profile.legal_institution),
     asText(profile.dispute_subject),
+    asText(profile.crime_type),
+    asText(profile.criminal_article),
+    asText(profile.special_law),
     asText(profile.result),
     asText(profile.outcome_type),
     asText(profile.appeal_type),
     asText(profile.court_branch),
+    ...asTextArray(profile.legal_articles),
     ...asTextArray(profile.must_match_terms),
     ...asTextArray(profile.strict_keywords),
     ...asTextArray(profile.keywords),
     ...queryText.split(/\s+/).slice(0, 8),
-  ]).map((item) => item.toLowerCase());
+  ]).filter(isUsefulSearchTerm).map((item) => item.toLowerCase());
 
   if (needles.length === 0) return 0;
 
@@ -147,6 +221,7 @@ function metadataBonus(row: SearchRow, profile: LegalProfile, queryText: string)
     row.legal_institution,
     row.administrative_body,
     row.special_law,
+    row.full_text,
   ].map(asText).join(" ").toLowerCase();
 
   if (!haystack) return 0;
@@ -192,6 +267,8 @@ function mergeResults(
     const existing = merged.get(key);
     const semantic = Math.max(0, Math.min(numeric(row.semantic_score), 1));
 
+    if (semantic < MIN_SEMANTIC_SCORE) continue;
+
     if (existing) {
       existing.semantic_score = Math.max(existing.semantic_score || 0, semantic);
       for (const [field, value] of Object.entries(row)) {
@@ -209,11 +286,15 @@ function mergeResults(
     }
   }
 
+  const hasVectorSignal = vectorRows.length > 0;
+
   const rows = Array.from(merged.values()).map((row) => {
     const bonus = metadataBonus(row, profile, queryText);
     const ftsScore = row.fts_score || 0;
     const semanticScore = row.semantic_score || 0;
-    const finalScore = (ftsScore * 0.50) + (semanticScore * 0.40) + (bonus * 0.10);
+    const finalScore = (ftsScore * FTS_WEIGHT) +
+      (semanticScore * SEMANTIC_WEIGHT) +
+      (bonus * METADATA_WEIGHT);
 
     return {
       ...row,
@@ -225,6 +306,11 @@ function mergeResults(
       metadata_bonus: bonus,
       search_mode: "hybrid_fts_vector_metadata",
     };
+  }).filter((row) => {
+    if (!hasVectorSignal) return true;
+    if ((row.semantic_score || 0) >= MIN_SEMANTIC_SCORE) return true;
+
+    return (row.fts_score || 0) >= 0.85 && (row.metadata_bonus || 0) >= 0.40;
   }).sort((a, b) => numeric(b.final_score) - numeric(a.final_score));
 
   const topRows = rows.slice(0, limit);
@@ -424,6 +510,13 @@ Deno.serve(async (req: Request) => {
         fts_row_count: ftsRows.length,
         fts_error: ftsResult.error?.message,
         vector_error: vectorResult.error?.message,
+        query_chars: queryText.length,
+        min_semantic_score: MIN_SEMANTIC_SCORE,
+        score_weights: {
+          fts: FTS_WEIGHT,
+          semantic: SEMANTIC_WEIGHT,
+          metadata: METADATA_WEIGHT,
+        },
       },
     });
   } catch (err) {

@@ -182,7 +182,7 @@ function buildProfileRow(
     case_summary:       str(p.case_summary),
     confidence:         typeof p.confidence === "number" ? p.confidence : null,
     processed_at:       new Date().toISOString(),
-    model_version:      "gpt-4o-mini",
+    model_version:      "gpt-5.4-mini",
 
     // administrative
     administrative_body:     str(p.administrative_body),
@@ -294,7 +294,7 @@ Deno.serve(async (req: Request) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model:           "gpt-4o-mini",
+            model:           "gpt-5.4-mini",
             temperature:     0.1,
             max_tokens:      1000,
             response_format: { type: "json_object" },

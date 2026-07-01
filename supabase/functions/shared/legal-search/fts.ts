@@ -9,9 +9,21 @@ export type LegalProfile = {
   broad_keywords?: unknown;
   keywords?: unknown;
   search_query?: unknown;
+  summary_for_search?: unknown;
+  desired_similarity?: unknown;
+  legal_issue?: unknown;
+  main_legal_issue?: unknown;
+  requested_action?: unknown;
+  result?: unknown;
+  outcome_type?: unknown;
+  appeal_type?: unknown;
+  court_branch?: unknown;
   // administrative-specific
   special_law?: unknown;
   administrative_body?: unknown;
+  // criminal-specific
+  crime_type?: unknown;
+  criminal_article?: unknown;
   // civil-specific (GPT may populate these in future)
   contract_type?: unknown;
   property_type?: unknown;
@@ -28,6 +40,8 @@ export type LegalProfile = {
 
 export type SearchPayload = {
   category?: unknown;
+  sourceTable?: unknown;
+  table?: unknown;
   aiResult?: LegalProfile;
   legalProfile?: LegalProfile;
   uploadedDocumentText?: unknown;
@@ -76,6 +90,9 @@ export function clampLimit(value: unknown): number {
 
 export function normalizeCategory(value: unknown): string {
   const category = asText(value);
+  if (category === "administrative_cases") return normalizeCategory("administrative");
+  if (category === "civil_cases") return normalizeCategory("civil");
+  if (category === "criminal_cases") return normalizeCategory("criminal");
   if (category === "ადმინისტრაციული" || category === "administrative") return "ადმინისტრაციული";
   if (category === "სამოქალაქო" || category === "civil") return "სამოქალაქო";
   if (category === "სისხლი" || category === "სისხლის" || category === "criminal") return "სისხლი";
@@ -133,32 +150,53 @@ export function extractDocumentSearchTerms(documentText: unknown): string[] {
 }
 
 export function buildCriminalRpcParams(profile: LegalProfile, limit: number) {
+  const genericInstitutions = new Set([
+    "სისხლი",
+    "სისხლის",
+    "სისხლის სამართალი",
+    "სისხლის სამართლის საქმე",
+  ]);
+
+  const legalInstitution = asText(profile.legal_institution);
+  const specificInstitution = genericInstitutions.has(legalInstitution.toLowerCase())
+    ? ""
+    : legalInstitution;
+
+  const articleTerms = [
+    ...asTextArray(profile.legal_articles),
+    ...asTextArray(profile.criminal_article),
+  ].flatMap((article) => article.match(/[0-9¹²³]{2,6}/g) ?? [])
+    .slice(0, 10);
+
+  const crimeType = asText(profile.crime_type);
+
   const strict = asTextArray([
     ...asTextArray(profile.strict_keywords),
     ...asTextArray(profile.must_match_terms),
-    asText(profile.legal_institution),
-    asText(profile.dispute_subject),
-    ...asTextArray(profile.legal_articles),
-  ]).slice(0, 12);
+    specificInstitution,
+    crimeType,
+    ...asTextArray(profile.criminal_article),
+    ...articleTerms,
+  ]).slice(0, 14);
 
   const broad = asTextArray([
     ...asTextArray(profile.broad_keywords),
     ...asTextArray(profile.keywords),
     asText(profile.search_query),
-  ]).slice(0, 10);
+    asText(profile.dispute_subject),
+  ]).slice(0, 12);
 
   return {
     p_strict_keywords:   strict,
     p_broad_keywords:    broad,
-    p_dispute_subject:   asText(profile.dispute_subject)   || null,
-    p_legal_institution: asText(profile.legal_institution) || null,
+    p_dispute_subject:   asText(profile.dispute_subject) || null,
+    p_legal_institution: specificInstitution || null,
     p_must_match_terms:  asTextArray(profile.must_match_terms).slice(0, 8),
     p_exclude_terms:     asTextArray(profile.exclude_terms).slice(0, 10),
-    p_legal_articles:    asTextArray(profile.legal_articles).slice(0, 10),
+    p_legal_articles:    asTextArray([...asTextArray(profile.legal_articles), ...asTextArray(profile.criminal_article), ...articleTerms]).slice(0, 12),
     p_limit:             limit,
   };
 }
-
 export function buildCivilRpcParams(profile: LegalProfile, limit: number) {
   // Civil-specific fields contribute to keyword pools.
   // Currently GPT doesn't extract these yet — structured here for future extension.

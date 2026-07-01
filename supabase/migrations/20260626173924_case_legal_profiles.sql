@@ -80,7 +80,7 @@ CREATE TABLE case_legal_profiles (
   -- ── metadata ────────────────────────────────────────────────────────────
   confidence      float4,
   processed_at    timestamptz DEFAULT now(),
-  model_version   text        DEFAULT 'gpt-4o-mini',
+  model_version   text        DEFAULT 'gpt-5.4-mini',
 
   UNIQUE (source_table, source_id)
 );

@@ -17,12 +17,31 @@ const TABLES = [
   "civil_cases",
 ];
 
-type EmbeddingCandidate = {
-  source_table: string;
-  source_id: number;
-  category: string;
-  case_number: string | null;
-  search_text: string;
+// Chunk parameters — ~1000 tokens ≈ 4000 chars; 500-char overlap avoids
+// cutting sentences at boundaries and ensures the verdict section is captured.
+const CHUNK_MAX_CHARS = 4000;
+const CHUNK_OVERLAP   = 500;
+const EMBEDDING_INPUT_BATCH_SIZE = 16;
+const EMBEDDING_BATCH_DELAY_MS = 1200;
+
+type CaseForEmbedding = {
+  source_table:      string;
+  source_id:         number;
+  category:          string;
+  case_number:       string | null;
+  dispute_subject:   string | null;
+  legal_institution: string | null;
+  result:            string | null;
+  full_text:         string | null;
+};
+
+type EmbeddingChunk = {
+  source_table:      string;
+  source_id:         number;
+  category:          string;
+  case_number:       string | null;
+  chunk_index:       number;
+  search_text:       string;
 };
 
 function jsonResp(body: unknown, status = 200): Response {
@@ -38,30 +57,127 @@ function clampBatchSize(value: unknown): number {
   return Math.min(Math.max(Math.trunc(parsed), 1), 100);
 }
 
-async function createEmbeddings(openaiKey: string, inputs: string[]) {
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openaiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-small",
-      input: inputs,
-    }),
-  });
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`OpenAI embeddings ${resp.status}: ${text.slice(0, 500)}`);
+/**
+ * Splits text into overlapping chunks so that the verdict/resolution section
+ * at the end of a court decision is always covered by at least one chunk.
+ */
+function chunkText(text: string, maxChars = CHUNK_MAX_CHARS, overlap = CHUNK_OVERLAP): string[] {
+  if (!text) return [];
+  if (text.length <= maxChars) return [text];
+
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < text.length) {
+    const end = Math.min(start + maxChars, text.length);
+    chunks.push(text.slice(start, end));
+    if (end === text.length) break;
+    start += maxChars - overlap;
   }
 
-  const data = await resp.json();
-  const embeddings = Array.isArray(data?.data) ? data.data : [];
+  return chunks;
+}
 
-  return embeddings
-    .sort((a, b) => Number(a.index) - Number(b.index))
-    .map((item) => item.embedding);
+function buildMetaPrefix(item: CaseForEmbedding): string {
+  const parts = [
+    item.case_number       && `საქმე: ${item.case_number}`,
+    item.dispute_subject   && `დავის საგანი: ${item.dispute_subject}`,
+    item.legal_institution && `სამართლებრივი ინსტიტუტი: ${item.legal_institution}`,
+    item.result            && `შედეგი: ${item.result}`,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" | ") + "\n\n" : "";
+}
+
+/**
+ * Produces one EmbeddingChunk per text segment. Each chunk carries the full
+ * case metadata prefix so every vector has unambiguous legal context.
+ */
+function buildChunksForCase(item: CaseForEmbedding): EmbeddingChunk[] {
+  const metaPrefix  = buildMetaPrefix(item);
+  const fullText    = item.full_text ?? "";
+
+  // Reserve space for metadata inside each chunk's 6000-char budget.
+  const textMaxChars = Math.max(CHUNK_MAX_CHARS - metaPrefix.length, 1000);
+  const textChunks   = chunkText(fullText, textMaxChars, CHUNK_OVERLAP);
+
+  // Case with no full_text: emit one metadata-only chunk so it's still indexed.
+  if (textChunks.length === 0) {
+    return [{
+      source_table: item.source_table,
+      source_id:    item.source_id,
+      category:     item.category,
+      case_number:  item.case_number,
+      chunk_index:  0,
+      search_text:  metaPrefix.trim().slice(0, 6000),
+    }];
+  }
+
+  return textChunks.map((textChunk, index) => ({
+    source_table: item.source_table,
+    source_id:    item.source_id,
+    category:     item.category,
+    case_number:  item.case_number,
+    chunk_index:  index,
+    search_text:  (metaPrefix + textChunk).slice(0, 6000),
+  }));
+}
+
+async function createEmbeddings(openaiKey: string, inputs: string[]): Promise<number[][]> {
+  const retryDelaysMs = [0, 2000, 5000, 10000];
+
+  for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
+    if (retryDelaysMs[attempt] > 0) {
+      await sleep(retryDelaysMs[attempt]);
+    }
+
+    const resp = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "text-embedding-3-small",
+        input: inputs,
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const embeddings = Array.isArray(data?.data) ? data.data : [];
+
+      return embeddings
+        .sort((a, b) => Number(a.index) - Number(b.index))
+        .map((item) => item.embedding);
+    }
+
+    const text = await resp.text().catch(() => "");
+    const canRetry = resp.status === 429 || resp.status >= 500;
+    if (!canRetry || attempt === retryDelaysMs.length - 1) {
+      throw new Error(`OpenAI embeddings ${resp.status}: ${text.slice(0, 500)}`);
+    }
+  }
+
+  throw new Error("OpenAI embeddings failed.");
+}
+
+async function createEmbeddingsBatched(openaiKey: string, inputs: string[]): Promise<number[][]> {
+  const embeddings: number[][] = [];
+
+  for (let start = 0; start < inputs.length; start += EMBEDDING_INPUT_BATCH_SIZE) {
+    const batch = inputs.slice(start, start + EMBEDDING_INPUT_BATCH_SIZE);
+    embeddings.push(...await createEmbeddings(openaiKey, batch));
+    if (start + EMBEDDING_INPUT_BATCH_SIZE < inputs.length) {
+      await sleep(EMBEDDING_BATCH_DELAY_MS);
+    }
+  }
+
+  return embeddings;
 }
 
 async function processTable(
@@ -70,7 +186,7 @@ async function processTable(
   table: string,
   batchSize: number,
 ) {
-  const errors: Array<{ id?: number; error: string }> = [];
+  const errors: Array<{ id?: number; chunk_index?: number; error: string }> = [];
 
   const { data, error } = await supabase.rpc("get_cases_for_embedding", {
     p_source_table: table,
@@ -80,83 +196,91 @@ async function processTable(
   if (error) {
     return {
       table,
-      processed: 0,
-      failed: 0,
-      remaining_batch_candidates: 0,
+      processed:    0,
+      failed:       0,
       errors: [{ error: `Fetch: ${error.message}` }],
     };
   }
 
-  const cases = (Array.isArray(data) ? data : []) as EmbeddingCandidate[];
+  const cases = (Array.isArray(data) ? data : []) as CaseForEmbedding[];
 
   if (cases.length === 0) {
-    return {
-      table,
-      processed: 0,
-      failed: 0,
-      remaining_batch_candidates: 0,
-      done: true,
-    };
+    return { table, processed: 0, failed: 0, done: true };
   }
 
+  // Flatten all chunks from all cases in this batch into one array.
+  const allChunks: EmbeddingChunk[] = [];
+  for (const item of cases) {
+    allChunks.push(...buildChunksForCase(item));
+  }
+
+  // Single OpenAI call for all chunks (typically 25 cases × ~5 chunks = ~125).
   let embeddings: number[][];
   try {
-    embeddings = await createEmbeddings(
+    embeddings = await createEmbeddingsBatched(
       openaiKey,
-      cases.map((item) => item.search_text.slice(0, 6000)),
+      allChunks.map((chunk) => chunk.search_text),
     );
   } catch (err) {
     return {
       table,
       processed: 0,
-      failed: cases.length,
-      remaining_batch_candidates: cases.length,
+      failed:    cases.length,
       errors: [{ error: String(err).slice(0, 700) }],
     };
   }
 
-  let processed = 0;
-  let failed = 0;
+  // Build upsert rows — skip any chunk whose embedding came back malformed.
+  const upsertRows: Array<Record<string, unknown>> = [];
 
-  for (let index = 0; index < cases.length; index++) {
-    const item = cases[index];
-    const embedding = embeddings[index];
+  for (let i = 0; i < allChunks.length; i++) {
+    const chunk     = allChunks[i];
+    const embedding = embeddings[i];
 
     if (!Array.isArray(embedding) || embedding.length !== 1536) {
-      failed++;
-      errors.push({ id: item.source_id, error: "Embedding missing or wrong dimension." });
+      errors.push({
+        id:          chunk.source_id,
+        chunk_index: chunk.chunk_index,
+        error:       "Embedding missing or wrong dimension.",
+      });
       continue;
     }
 
+    upsertRows.push({
+      source_table:  chunk.source_table,
+      source_id:     chunk.source_id,
+      category:      chunk.category,
+      case_number:   chunk.case_number,
+      chunk_index:   chunk.chunk_index,
+      search_text:   chunk.search_text,
+      embedding,
+      model_version: "text-embedding-3-small",
+    });
+  }
+
+  let processed = 0;
+  let failed    = allChunks.length - upsertRows.length; // malformed embeddings
+
+  if (upsertRows.length > 0) {
     const { error: upsertError } = await supabase
       .from("case_search_embeddings")
-      .upsert({
-        source_table: item.source_table,
-        source_id: item.source_id,
-        category: item.category,
-        case_number: item.case_number,
-        search_text: item.search_text,
-        embedding,
-        model_version: "text-embedding-3-small",
-      }, {
-        onConflict: "source_table,source_id",
-      });
+      .upsert(upsertRows, { onConflict: "source_table,source_id,chunk_index" });
 
     if (upsertError) {
-      failed++;
-      errors.push({ id: item.source_id, error: `Upsert: ${upsertError.message}` });
-      continue;
+      failed += upsertRows.length;
+      errors.push({ error: `Batch upsert: ${upsertError.message}` });
+    } else {
+      processed = upsertRows.length;
     }
-
-    processed++;
   }
 
   return {
     table,
     processed,
     failed,
-    batch_size: cases.length,
-    remaining_batch_candidates: Math.max(cases.length - processed, 0),
+    cases_in_batch:  cases.length,
+    chunks_in_batch: allChunks.length,
+    done: cases.length < batchSize,
     errors: errors.length > 0 ? errors : undefined,
   };
 }
@@ -167,8 +291,8 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const serviceKey  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const openaiKey   = Deno.env.get("OPENAI_API_KEY");
 
     if (!supabaseUrl || !serviceKey) {
       return jsonResp({ error: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set." }, 500);
@@ -185,7 +309,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestedTable = String(body.table ?? "civil_cases");
-    const batchSize = clampBatchSize(body.batch_size);
+    const batchSize      = clampBatchSize(body.batch_size);
 
     if (requestedTable !== "all" && !VALID_TABLES.has(requestedTable)) {
       return jsonResp({
@@ -197,22 +321,17 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false },
     });
 
-    const tables = requestedTable === "all" ? TABLES : [requestedTable];
+    const tables  = requestedTable === "all" ? TABLES : [requestedTable];
     const results = [];
 
     for (const table of tables) {
       results.push(await processTable(supabase, openaiKey, table, batchSize));
     }
 
-    const processed = results.reduce((sum, item) => sum + Number(item.processed || 0), 0);
-    const failed = results.reduce((sum, item) => sum + Number(item.failed || 0), 0);
+    const processed = results.reduce((sum, r) => sum + Number(r.processed || 0), 0);
+    const failed    = results.reduce((sum, r) => sum + Number(r.failed    || 0), 0);
 
-    return jsonResp({
-      processed,
-      failed,
-      model_version: "text-embedding-3-small",
-      results,
-    });
+    return jsonResp({ processed, failed, model_version: "text-embedding-3-small", results });
   } catch (err) {
     console.error("batch-index-embeddings unhandled error:", err);
     return jsonResp({ error: String(err) }, 500);
